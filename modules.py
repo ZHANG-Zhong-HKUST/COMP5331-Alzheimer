@@ -26,22 +26,22 @@ class SENet(nn.Module):
 class CNNSE(nn.Module):
     'Convolutional Neural Networks with SEnet'
     
-    def __init__(self, mri_dim=128, n_channels=1) -> None:
+    def __init__(self, in_channels=1, out_dim=128) -> None:
         super().__init__()
         self.body = torch.nn.ModuleList(
-            [torch.nn.Conv3d(1, 64, 4, 2), torch.nn.MaxPool3d(4, 2), SENet(64)])
+            [torch.nn.Conv3d(in_channels, 64, 4, 2), torch.nn.MaxPool3d(4, 2), SENet(64)])
         for c in [64, 128, 256]:
             self.body.extend([
                 torch.nn.Conv3d(c, c*2, 4, 2), 
                 torch.nn.MaxPool3d(4, 2), 
                 SENet(c*2)
             ])
-        self.global_avg_pooling = lambda x:torch.mean(x, (0, 1, 2))
+        self.global_avg_pooling = lambda x:torch.mean(x, (0, 1, 2)).unsqueeze(-1)
         self.linear_1 = torch.nn.Linear(512, 256)
-        self.linear_2 = torch.nn.Linear(256, 128)
+        self.linear_2 = torch.nn.Linear(256, out_dim)
         
-    def forward(self, mri_inputs):
-        x = mri_inputs
+    def forward(self, images):
+        x = images
         for layer in self.body:
             x = layer(x)
         x = self.linear_2(self.linear_1(self.global_avg_pooling(x)))
@@ -69,7 +69,16 @@ class MAFM(nn.Module):
         return x
 
 
+class AlzheimerModel(nn.Module):
+    
+    def __init__(self, indicator_dim) -> None:
+        super().__init__()
+        self.cnn_se = CNNSE(1, 128)
+        self.mafm = MAFM(128, indicator_dim)
 
+    def forward(self, images, indicators):
+        ret = self.mafm(self.cnn_se(images), indicators)
 
+        return ret
 
 
