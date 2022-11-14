@@ -1,24 +1,24 @@
-from statistics import LinearRegression
-from turtle import forward
 import torch
-
+import torch.nn as nn
 
 class SENet(nn.Module):
     'Squeeze-and-Excitation networks'
 
-    def __init__(self, n_channels, dim_red_factor=16) -> None:
+    def __init__(self, c_in, dim_red_factor=16) -> None:
         super().__init__()
-        self.global_avg_pooling = lambda x:torch.mean(x, (0, 1, 2), keepdim=True)
-        self.linear_1 = torch.nn.Linear(n_channels, n_channels/dim_red_factor)
+        c_hidden = int(c_in/dim_red_factor)
+        self.global_avg_pooling = lambda x:torch.mean(x, (1, 2, 3), keepdim=True)
+        self.linear_1 = torch.nn.Linear(c_in, c_hidden)
         self.relu = torch.nn.ReLU()
-        self.linear_2 = torch.nn.Linear(n_channels/dim_red_factor, n_channels)
+        self.linear_2 = torch.nn.Linear(c_hidden, c_in)
         self.sigmoid = torch.nn.Sigmoid()
     
-    def forward(self, inputs):
+    def forward(self, inputs: torch.Tensor):
+        inputs = inputs.permute((0, 2, 3, 4, 1))
         x = self.global_avg_pooling(inputs)
         x = self.linear_2(self.relu(self.linear_1(x)))
         attns = self.sigmoid(x)
-        ret = torch.mul(inputs, attns)
+        ret = torch.mul(inputs, attns).permute((0, 4, 1, 2, 3))
         
         return ret
 
@@ -26,17 +26,17 @@ class SENet(nn.Module):
 class CNNSE(nn.Module):
     'Convolutional Neural Networks with SEnet'
     
-    def __init__(self, in_channels=1, out_dim=128) -> None:
+    def __init__(self, c_in=1, out_dim=128) -> None:
         super().__init__()
         self.body = torch.nn.ModuleList(
-            [torch.nn.Conv3d(in_channels, 64, 4, 2), torch.nn.MaxPool3d(4, 2), SENet(64)])
+            [torch.nn.Conv3d(c_in, 64, 3, 1), torch.nn.MaxPool3d(2, 2), SENet(64)])
         for c in [64, 128, 256]:
             self.body.extend([
-                torch.nn.Conv3d(c, c*2, 4, 2), 
+                torch.nn.Conv3d(c, c*2, 3, 1), 
                 torch.nn.MaxPool3d(4, 2), 
                 SENet(c*2)
             ])
-        self.global_avg_pooling = lambda x:torch.mean(x, (0, 1, 2)).unsqueeze(-1)
+        self.global_avg_pooling = lambda x:torch.mean(x, (1, 2, 3))
         self.linear_1 = torch.nn.Linear(512, 256)
         self.linear_2 = torch.nn.Linear(256, out_dim)
         
@@ -44,7 +44,10 @@ class CNNSE(nn.Module):
         x = images
         for layer in self.body:
             x = layer(x)
-        x = self.linear_2(self.linear_1(self.global_avg_pooling(x)))
+            print(x.size(-1))
+        x = x.permute((0, 2, 3, 4, 1))
+        x = self.global_avg_pooling(x)
+        x = self.linear_2(self.linear_1(x)).unsqueeze(-1)
 
         return x
 
@@ -54,16 +57,19 @@ class MAFM(nn.Module):
     
     def __init__(self, image_dim, indicator_dim) -> None:
         super().__init__()
-        self.transformer_layer = torch.nn.TransformerEncoderLayer(
-            d_model=1, nhead=8, dim_feedforward=1)
+        self.transformer_layer1 = torch.nn.TransformerEncoderLayer(
+            d_model=1, nhead=1, dim_feedforward=1)
+        self.transformer_layer2 = torch.nn.TransformerEncoderLayer(
+            d_model=1, nhead=1, dim_feedforward=1)
         self.linear = torch.nn.Linear(image_dim+indicator_dim, 3)
-        self.softmax = torch.nn.Softmax()
+        self.softmax = torch.nn.Softmax(dim=-1)
     
     def forward(self, image_embeds, indicator_embeds):
-
-        img = self.transformer_layer(image_embeds)
-        ind = self.transformer_layer(indicator_embeds)
-        x = torch.cat((img, ind), dim=0)
+        indicator_embeds = indicator_embeds.transpose(1, 2)
+        img = self.transformer_layer1(image_embeds)
+        ind = self.transformer_layer2(indicator_embeds)
+        x = torch.cat((img, ind), dim=1)
+        x = x.squeeze(dim=-1)
         x = self.softmax(self.linear(x))
 
         return x
