@@ -1,5 +1,19 @@
 from math import log
-def H1(x):
+
+def discre(X):
+	mx = max(X)
+	mn = min(X)
+	n = len(X)
+	base = (mx-mn)/n
+	ret = []
+	for i in X:
+		tmp = int(i/base)
+		tmp = tmp*base
+		ret.append(tmp)
+	return ret
+
+def H1(in_x):
+	x = discre(in_x)
 	count={}
 	for i in x:
 		if(not(i in count.keys())):
@@ -15,10 +29,12 @@ def H1(x):
 
 	return ans
 
-def H(X,Y):
+def H(in_X,in_Y):
 	'''
 	H(X|Y)
 	'''
+	X = discre(in_X)
+	Y = discre(in_Y)
 	y={}
 	for i in Y:
 		if(not (i in y.keys())):
