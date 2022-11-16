@@ -44,7 +44,6 @@ class CNNSE(nn.Module):
         x = images
         for layer in self.body:
             x = layer(x)
-            print(x.size(-1))
         x = x.permute((0, 2, 3, 4, 1))
         x = self.global_avg_pooling(x)
         x = self.linear_2(self.linear_1(x)).unsqueeze(-1)
@@ -58,9 +57,9 @@ class MAFM(nn.Module):
     def __init__(self, image_dim, indicator_dim) -> None:
         super().__init__()
         self.transformer_layer1 = torch.nn.TransformerEncoderLayer(
-            d_model=1, nhead=1, dim_feedforward=1)
+            d_model=1, nhead=1, dim_feedforward=1, dropout=0.02)
         self.transformer_layer2 = torch.nn.TransformerEncoderLayer(
-            d_model=1, nhead=1, dim_feedforward=1)
+            d_model=1, nhead=1, dim_feedforward=1, dropout=0.02)
         self.linear = torch.nn.Linear(image_dim+indicator_dim, 3)
         self.softmax = torch.nn.Softmax(dim=-1)
     
@@ -79,10 +78,14 @@ class AlzheimerModel(nn.Module):
     
     def __init__(self, indicator_dim) -> None:
         super().__init__()
+        self.layer_norm1 = torch.nn.LayerNorm((128, 128, 128))
+        self.layer_norm2 = torch.nn.LayerNorm(11)
         self.cnn_se = CNNSE(1, 128)
         self.mafm = MAFM(128, indicator_dim)
 
     def forward(self, images, indicators):
+        images = self.layer_norm1(images)
+        indicators = self.layer_norm2(indicators)
         ret = self.mafm(self.cnn_se(images), indicators)
 
         return ret
