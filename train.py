@@ -39,6 +39,7 @@ def get_metrics(gt: torch.Tensor, pred: torch.Tensor):
     gt = torch.max(gt, dim=1)[1]
     pred = torch.max(pred, dim=1)[1]
     con_mat = confusion_matrix(gt,pred)
+    print(con_mat)
 
     rec_sum, pre_sum, acc_sum, spe_sum = 0, 0, 0, 0
     for i in range(no_class):
@@ -51,12 +52,10 @@ def get_metrics(gt: torch.Tensor, pred: torch.Tensor):
         pre_sum += tp/(tp+fp)
         acc_sum += (tp+tn)/number
         spe_sum += tn/(tn+fp)
-        
+
     return {
-        'specificity': spe_sum/no_class,
-        'recall': rec_sum/no_class,
-        'accuracy': acc_sum/no_class,
-        'precision': pre_sum/no_class,
+        'specificity': spe_sum/no_class, 'recall': rec_sum/no_class, 
+        'accuracy': acc_sum/no_class, 'precision': pre_sum/no_class, 
         'F1': 2*pre_sum*rec_sum/(pre_sum+rec_sum)/no_class,
     }
 
@@ -78,7 +77,7 @@ class AlzheimerDataset(torch.utils.data.Dataset):
 
         data = pd.read_csv('selected_data.csv').fillna(0)
         for i, ptid in enumerate(data['ptid']):
-            path = os.popen(f"find /home/comp5331/ADNIp/{ptid} -name '*_wm.mgz'", 'r').read()[:-1]
+            path = os.popen(f"find ADNIp/{ptid} -name '*_wm.mgz'", 'r').read()[:-1]
             if path != '':
                 self.labels.append(one_hot(data['label'][i]))
                 self.indicators.append(data[i:i+1][idct_list].to_numpy(dtype=np.float32))
@@ -100,6 +99,7 @@ class AlzheimerDataset(torch.utils.data.Dataset):
 
 
 def main(args):
+    print(args)
     out_dir = f'{args.epochs}_{args.batch_size}_{args.lr}_{args.l2_regular}'
 
     # Load data
@@ -127,8 +127,7 @@ def main(args):
         model.eval()
         gt, pred = [], []
         with torch.no_grad():
-            for images, indicators, labels in train_loader:
-                print(images)
+            for images, indicators, labels in test_loader:
                 images = images.to(device)
                 indicators = indicators.to(device)
                 labels = labels.to(device)
@@ -138,7 +137,6 @@ def main(args):
             gt = torch.concat(gt, dim=0)
             pred = torch.concat(pred, dim=0)
             metrics = get_metrics(gt, pred)
-            print(pred)
             print_dict(metrics)
         return
 
@@ -185,7 +183,7 @@ def main(args):
             val_loss = loss_fn(pred, gt).cpu().item()
         if val_loss < val_min:
             val_min = val_loss
-            torch.save(model.state_dict(), os.path.join(args.out, f'checkpoint.pt'))
+            torch.save(model.state_dict(), os.path.join(args.out, out_dir, f'checkpoint.pt'))
 
         print(f'loss: {loss:.5f}\t', f'val_loss: {val_loss:.5f}', end='\t')
             
@@ -197,7 +195,7 @@ def main(args):
         writer.add_scalar('val_loss', val_loss, epoch)
 
     # Save model parameters
-    torch.save(model.state_dict(), os.path.join(args.out, 'final.pt'))
+    torch.save(model.state_dict(), os.path.join(args.out, out_dir, 'final.pt'))
 
     # Testing
     print('=====> Testing...')
@@ -215,6 +213,7 @@ def main(args):
         gt = torch.concat(gt, dim=0)
         pred = torch.concat(pred, dim=0)
         metrics = get_metrics(gt, pred)
+        print(pred)
         print_dict(metrics)
 
     writer.close()
